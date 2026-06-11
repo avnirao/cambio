@@ -7,6 +7,36 @@ type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Server function failed";
+}
+
+function renderServerFnError(error: unknown): Response {
+  const message = getErrorMessage(error);
+  return new Response(
+    JSON.stringify({
+      t: 10,
+      i: 0,
+      p: {
+        k: ["result", "error", "context"],
+        v: [
+          { t: 2, s: 1 },
+          { t: 25, i: 1, s: { message: { t: 1, s: message } }, c: "$TSR/Error" },
+          { t: 10, i: 2, p: { k: [], v: [] }, o: 0 },
+        ],
+      },
+      o: 0,
+    }),
+    {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        "x-tss-serialized": "true",
+      },
+    },
+  );
+}
+
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
 async function getServerEntry(): Promise<ServerEntry> {
@@ -25,7 +55,10 @@ async function normalizeCatastrophicSsrResponse(
   isServerFnRequest: boolean,
 ): Promise<Response> {
   if (response.status < 500) return response;
-  if (isServerFnRequest) return response;
+  if (isServerFnRequest) {
+    if (response.headers.get("x-tss-serialized") === "true") return response;
+    return renderServerFnError(new Error("Server function failed"));
+  }
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) return response;
 
@@ -49,7 +82,7 @@ export default {
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response, isServerFnRequest);
     } catch (error) {
-      if (isServerFnRequest) throw error;
+      if (isServerFnRequest) return renderServerFnError(error);
       console.error(error);
       return new Response(renderErrorPage(), {
         status: 500,
