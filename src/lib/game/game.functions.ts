@@ -137,7 +137,8 @@ export const startGame = createServerFn({ method: "POST" })
       .from("games")
       .update({
         status: "setup",
-        state: state as unknown as object,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        state: state as any,
         version: game.version + 1,
       })
       .eq("id", game.id);
