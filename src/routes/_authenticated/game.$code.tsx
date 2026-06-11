@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useServerFn } from "@tanstack/react-start";
 import {
   getGameView,
+  joinGame,
   startGame,
   setupReady,
   drawCard,
@@ -30,19 +31,34 @@ function GamePage() {
   const { code } = useParams({ from: "/_authenticated/game/$code" });
   const navigate = useNavigate();
   const fetchView = useServerFn(getGameView);
+  const join = useServerFn(joinGame);
   const [view, setView] = useState<ViewResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const triedJoinRef = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
       const v = await fetchView({ data: { code } });
       setView(v);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load");
+      const message = e instanceof Error ? e.message : "Failed to load";
+      if (message === "Not in game" && !triedJoinRef.current) {
+        triedJoinRef.current = true;
+        try {
+          await join({ data: { code } });
+          const v = await fetchView({ data: { code } });
+          setView(v);
+          return;
+        } catch (joinError) {
+          toast.error(joinError instanceof Error ? joinError.message : "Failed to join");
+        }
+      } else {
+        toast.error(message);
+      }
     } finally {
       setLoading(false);
     }
-  }, [fetchView, code]);
+  }, [fetchView, join, code]);
 
   // Initial load + realtime
   useEffect(() => {
