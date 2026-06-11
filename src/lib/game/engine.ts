@@ -134,7 +134,7 @@ function requireTurn(s: GameState, pid: string) {
 
 export function actDraw(s: GameState, pid: string, from: "deck" | "discard"): GameState {
   requireTurn(s, pid);
-  if (s.drawn) throw new Error("Already drew");
+  if (s.drawn) return s; // idempotent — ignore double-click
   if (from === "deck") {
     const c = drawFromDeck(s);
     s.drawn = { card: c, from: "deck" };
