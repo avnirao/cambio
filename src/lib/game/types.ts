@@ -70,6 +70,14 @@ export interface GameView {
   winnerId: string | null;
   log: { t: number; msg: string }[];
   setupReady: Record<string, boolean>;
+  ability: {
+    by: string;
+    kind: AbilityKind;
+    step: AbilityStep;
+    // Card value only present for the acting player; -1 for others.
+    revealed?: { userId: string; position: number; card: Card };
+    pickedFirst?: { userId: string; position: number };
+  } | null;
 }
 
 export function rankOf(card: Card): number {
