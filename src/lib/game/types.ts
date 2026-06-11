@@ -6,6 +6,19 @@ export type Phase = "setup" | "play" | "cambio" | "finished";
 // suit = floor(idx / 13)
 export type Card = number;
 
+export type AbilityKind = "peekSelf" | "peekOther" | "blindSwap" | "lookSwap";
+export type AbilityStep = "pick" | "lookSwapChooseSwap";
+
+export interface Ability {
+  by: string;
+  kind: AbilityKind;
+  step: AbilityStep;
+  // For peekOther / lookSwap: the card revealed only to the acting player.
+  revealed?: { userId: string; position: number; card: Card };
+  // For blindSwap: first picked slot.
+  pickedFirst?: { userId: string; position: number };
+}
+
 export interface GameState {
   deck: Card[]; // top is last (pop)
   discard: Card[]; // top is last
@@ -24,8 +37,8 @@ export interface GameState {
   log: { t: number; msg: string }[];
   // Per-player tracking of positions they have peeked in their OWN hand.
   seenPositions: Record<string, number[]>;
-  // When set, indicates the snap window for the last discard.
-  // Players can snap until next turn action consumes it (we let it stay open).
+  // Pending card ability after discarding a deck-drawn card.
+  ability: Ability | null;
 }
 
 export interface PublicPlayer {
