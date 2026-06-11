@@ -151,8 +151,7 @@ export function actDraw(s: GameState, pid: string, from: "deck" | "discard"): Ga
 }
 
 export function actDiscardDrawn(s: GameState, pid: string): GameState {
-  requireTurn(s, pid);
-  if (!s.drawn) throw new Error("Nothing drawn");
+  if (s.phase !== "play" || s.seatOrder[s.turn] !== pid || !s.drawn) return s; // idempotent
   if (s.drawn.from === "discard")
     throw new Error("Can't discard a card you took from discard — must swap");
   s.discard.push(s.drawn.card);
@@ -164,8 +163,7 @@ export function actDiscardDrawn(s: GameState, pid: string): GameState {
 }
 
 export function actSwap(s: GameState, pid: string, position: number): GameState {
-  requireTurn(s, pid);
-  if (!s.drawn) throw new Error("Nothing drawn");
+  if (s.phase !== "play" || s.seatOrder[s.turn] !== pid || !s.drawn) return s; // idempotent
   const hand = s.hands[pid];
   if (position < 0 || position >= hand.length) throw new Error("Bad position");
   const existing = hand[position];
@@ -182,7 +180,7 @@ export function actSwap(s: GameState, pid: string, position: number): GameState 
 }
 
 export function actCallCambio(s: GameState, pid: string): GameState {
-  requireTurn(s, pid);
+  if (s.phase !== "play" || s.seatOrder[s.turn] !== pid) return s; // idempotent
   if (s.drawn) throw new Error("Finish your draw first");
   if (s.cambioCalledBy) throw new Error("Cambio already called");
   s.cambioCalledBy = pid;
