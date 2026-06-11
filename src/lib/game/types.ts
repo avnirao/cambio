@@ -90,7 +90,18 @@ export function rankLabel(card: Card): string {
 export function suitLabel(card: Card): string {
   return ["♠", "♥", "♦", "♣"][suitOf(card)];
 }
+// Scoring (Cambio house rules):
+// A=1, 2..10=face, J=Q=10, Black K (♠/♣)=10, Red K (♥/♦)=-1.
+export function scoreOf(card: Card): number {
+  const r = rankOf(card);
+  if (r === 12) return isRed(card) ? -1 : 10; // King
+  if (r === 10 || r === 11) return 10; // Jack / Queen
+  return r + 1; // Ace..10
+}
 export function isRed(card: Card): boolean {
   const s = suitOf(card);
   return s === 1 || s === 2;
+}
+export function isBlack(card: Card): boolean {
+  return !isRed(card);
 }
