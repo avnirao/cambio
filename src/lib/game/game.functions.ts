@@ -124,7 +124,7 @@ export const startGame = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!game) throw new Error("Game not found");
     if (game.host_id !== context.userId) throw new Error("Only host can start");
-    if (game.status !== "lobby") throw new Error("Already started");
+    if (game.status !== "lobby") return { ok: true };
     const { data: players } = await supabaseAdmin
       .from("game_players")
       .select("user_id, seat")
