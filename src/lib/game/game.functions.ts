@@ -176,7 +176,8 @@ async function saveState(
   await supabaseAdmin
     .from("games")
     .update({
-      state: state as unknown as object,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      state: state as any,
       version: game.version + 1,
       status,
     })
