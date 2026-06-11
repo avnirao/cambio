@@ -32,7 +32,7 @@ export function initialState(seatOrder: string[]): GameState {
   for (const pid of seatOrder) {
     hands[pid] = [deck.pop()!, deck.pop()!, deck.pop()!, deck.pop()!];
     setupReady[pid] = false;
-    seenPositions[pid] = [];
+    seenPositions[pid] = [2, 3];
   }
   // First card of discard from deck
   const first = deck.pop()!;
