@@ -56,6 +56,7 @@ export function initialState(seatOrder: string[]): GameState {
     winnerId: null,
     log: [{ t: Date.now(), msg: "Game started — peek your bottom 2 cards" }],
     seenPositions,
+    ability: null,
   };
 }
 
