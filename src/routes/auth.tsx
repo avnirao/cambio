@@ -10,8 +10,8 @@ export const Route = createFileRoute("/auth")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "Sign in — Cambio" },
-      { name: "description", content: "Sign in or create an account to play Cambio online." },
+      { title: "Play — Cambio" },
+      { name: "description", content: "Pick a name and jump into a Cambio game." },
     ],
   }),
   beforeLoad: async () => {
@@ -23,9 +23,6 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"signin" | "signup">("signup");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -33,22 +30,11 @@ function AuthPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/`,
-            data: { username: username || email.split("@")[0] },
-          },
-        });
-        if (error) throw error;
-        toast.success("Account created");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        toast.success("Welcome back");
-      }
+      const name = username.trim() || `Player${Math.floor(Math.random() * 9000 + 1000)}`;
+      const { error } = await supabase.auth.signInAnonymously({
+        options: { data: { username: name } },
+      });
+      if (error) throw error;
       navigate({ to: "/" });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Something went wrong");
@@ -65,50 +51,21 @@ function AuthPage() {
           The card game where the lowest hand wins.
         </p>
         <form onSubmit={submit} className="space-y-4">
-          {mode === "signup" && (
-            <div className="space-y-2">
-              <Label htmlFor="username">Display name</Label>
-              <Input
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="How others see you"
-                maxLength={24}
-              />
-            </div>
-          )}
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="username">Display name</Label>
             <Input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              required
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              id="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="How others see you"
+              maxLength={24}
+              autoFocus
             />
           </div>
           <Button type="submit" disabled={busy} className="w-full">
-            {mode === "signup" ? "Create account" : "Sign in"}
+            {busy ? "Joining…" : "Play"}
           </Button>
         </form>
-        <button
-          type="button"
-          onClick={() => setMode(mode === "signup" ? "signin" : "signup")}
-          className="mt-4 w-full text-sm text-muted-foreground hover:text-foreground"
-        >
-          {mode === "signup" ? "Have an account? Sign in" : "New here? Create an account"}
-        </button>
       </div>
     </div>
   );
