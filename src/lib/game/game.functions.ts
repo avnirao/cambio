@@ -12,23 +12,8 @@ import {
   initialState,
 } from "./engine";
 import type { GameState } from "./types";
+import { loadAdminAndProfile, loadGameForAction, randCode, saveState } from "./game.server";
 
-function randCode(): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let s = "";
-  for (let i = 0; i < 4; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return s;
-}
-
-async function loadAdminAndProfile(userId: string) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("username")
-    .eq("id", userId)
-    .single();
-  return { supabaseAdmin, username: profile?.username || "Player" };
-}
 
 // ============= Create =============
 export const createGame = createServerFn({ method: "POST" })
