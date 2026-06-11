@@ -78,11 +78,6 @@ export function rankOf(card: Card): number {
 export function suitOf(card: Card): number {
   return Math.floor(card / 13);
 }
-// Scoring: A=1, 2..10 = face, J=11, Q=12, K=13.
-// Common Cambio variant: K of hearts/diamonds = 0; we keep it simple: K=13.
-export function scoreOf(card: Card): number {
-  return rankOf(card) + 1;
-}
 export function rankLabel(card: Card): string {
   const r = rankOf(card);
   return ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"][r];
