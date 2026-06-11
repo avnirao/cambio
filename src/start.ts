@@ -7,6 +7,12 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
   try {
     return await next();
   } catch (error) {
+    if (typeof window === "undefined") {
+      const { getRequestUrl } = await import("@tanstack/react-start/server");
+      if (getRequestUrl().pathname.startsWith("/_serverFn/")) {
+        throw error;
+      }
+    }
     if (error != null && typeof error === "object" && "statusCode" in error) {
       throw error;
     }
