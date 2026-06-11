@@ -1,8 +1,11 @@
 import {
+  type Ability,
+  type AbilityKind,
   type Card,
   type GameState,
   type GameView,
   type PublicPlayer,
+  isBlack,
   rankOf,
   scoreOf,
 } from "./types";
