@@ -97,7 +97,7 @@ function GamePage() {
   }
 
   if (view.lobby) {
-    return <LobbyView view={view} onLeave={() => navigate({ to: "/" })} />;
+    return <LobbyView view={view} onLeave={() => navigate({ to: "/" })} onStarted={refresh} />;
   }
   return <BoardView code={code} view={view.view} onLeave={() => navigate({ to: "/" })} />;
 }
@@ -107,9 +107,11 @@ function GamePage() {
 function LobbyView({
   view,
   onLeave,
+  onStarted,
 }: {
   view: Extract<ViewResult, { lobby: true }>;
   onLeave: () => void;
+  onStarted: () => Promise<void>;
 }) {
   const start = useServerFn(startGame);
   const [busy, setBusy] = useState(false);
@@ -119,6 +121,7 @@ function LobbyView({
     setBusy(true);
     try {
       await start({ data: { code: view.code } });
+      await onStarted();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -172,10 +175,10 @@ function LobbyView({
           {isHost ? (
             <Button
               onClick={onStart}
-              disabled={busy || view.players.length < 2}
+              disabled={busy || view.players.length < 1}
               className="w-full"
             >
-              Deal {view.players.length < 2 && "(need 2+)"}
+              Deal
             </Button>
           ) : (
             <p className="text-sm text-muted-foreground italic">Waiting for host to deal…</p>
