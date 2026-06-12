@@ -117,8 +117,8 @@ function finalizeScores(s: GameState) {
 // ----------------- Actions -----------------
 
 export function actSetupReady(s: GameState, pid: string): GameState {
-  if (s.phase !== "setup") throw new Error("Not in setup");
   if (!(pid in s.hands)) throw new Error("Not a player");
+  if (s.phase !== "setup") return s; // idempotent — already started
   s.setupReady[pid] = true;
   // Mark bottom 2 positions as "seen" by this player
   s.seenPositions[pid] = [2, 3];
