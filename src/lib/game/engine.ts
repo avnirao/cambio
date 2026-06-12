@@ -498,5 +498,20 @@ export function buildView(
     winnerId: state.winnerId,
     log: state.log.slice(-15),
     setupReady: state.setupReady,
+    ability: state.ability
+      ? {
+          by: state.ability.by,
+          kind: state.ability.kind,
+          step: state.ability.step,
+          revealed: state.ability.revealed
+            ? {
+                userId: state.ability.revealed.userId,
+                position: state.ability.revealed.position,
+                card: state.ability.by === myUserId ? state.ability.revealed.card : -1,
+              }
+            : undefined,
+          pickedFirst: state.ability.pickedFirst,
+        }
+      : null,
   };
 }
