@@ -247,3 +247,81 @@ export const snapCard = createServerFn({ method: "POST" })
     await saveState(supabaseAdmin, game, next);
     return { ok: true };
   });
+
+// ============= Card abilities =============
+const pos = z.number().int().min(0).max(20);
+const targetSchema = z.object({
+  code: z.string(),
+  targetUserId: z.string().uuid(),
+  position: pos,
+});
+
+export const abilityPeekSelf = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ code: z.string(), position: pos }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin, game } = await loadGameForAction(data.code, context.userId);
+    const next = actAbilityPeekSelf(game.state as unknown as GameState, context.userId, data.position);
+    await saveState(supabaseAdmin, game, next);
+    return { ok: true };
+  });
+
+export const abilityPeekOther = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => targetSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin, game } = await loadGameForAction(data.code, context.userId);
+    const next = actAbilityPeekOther(game.state as unknown as GameState, context.userId, data.targetUserId, data.position);
+    await saveState(supabaseAdmin, game, next);
+    return { ok: true };
+  });
+
+export const abilityConfirm = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => codeSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin, game } = await loadGameForAction(data.code, context.userId);
+    const next = actAbilityConfirm(game.state as unknown as GameState, context.userId);
+    await saveState(supabaseAdmin, game, next);
+    return { ok: true };
+  });
+
+export const abilityBlindSwap = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => targetSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin, game } = await loadGameForAction(data.code, context.userId);
+    const next = actAbilityBlindSwap(game.state as unknown as GameState, context.userId, data.targetUserId, data.position);
+    await saveState(supabaseAdmin, game, next);
+    return { ok: true };
+  });
+
+export const abilityLookSwapPeek = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => targetSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin, game } = await loadGameForAction(data.code, context.userId);
+    const next = actAbilityLookSwapPeek(game.state as unknown as GameState, context.userId, data.targetUserId, data.position);
+    await saveState(supabaseAdmin, game, next);
+    return { ok: true };
+  });
+
+export const abilityLookSwapDecide = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ code: z.string(), swapWithPosition: pos.nullable() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin, game } = await loadGameForAction(data.code, context.userId);
+    const next = actAbilityLookSwapDecide(game.state as unknown as GameState, context.userId, data.swapWithPosition);
+    await saveState(supabaseAdmin, game, next);
+    return { ok: true };
+  });
+
+export const abilitySkip = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => codeSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin, game } = await loadGameForAction(data.code, context.userId);
+    const next = actAbilitySkip(game.state as unknown as GameState, context.userId);
+    await saveState(supabaseAdmin, game, next);
+    return { ok: true };
+  });
