@@ -1,5 +1,4 @@
 import {
-  type Ability,
   type AbilityKind,
   type Card,
   type GameState,
