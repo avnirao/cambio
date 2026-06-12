@@ -219,6 +219,162 @@ export function actCallCambio(s: GameState, pid: string): GameState {
   return s;
 }
 
+// ----------------- Card abilities -----------------
+
+function requireAbility(s: GameState, pid: string, kind: AbilityKind | AbilityKind[]) {
+  if (!s.ability) throw new Error("No pending ability");
+  if (s.ability.by !== pid) throw new Error("Not your ability");
+  const kinds = Array.isArray(kind) ? kind : [kind];
+  if (!kinds.includes(s.ability.kind)) throw new Error("Wrong ability");
+}
+
+function clearAbilityAndAdvance(s: GameState) {
+  s.ability = null;
+  advanceTurn(s);
+}
+
+// 7/8: peek one of your own cards. Permanently added to seenPositions.
+export function actAbilityPeekSelf(s: GameState, pid: string, position: number): GameState {
+  if (!s.ability || s.ability.by !== pid) return s; // idempotent
+  requireAbility(s, pid, "peekSelf");
+  const hand = s.hands[pid];
+  if (position < 0 || position >= hand.length || hand[position] === null)
+    throw new Error("Bad position");
+  if (!s.seenPositions[pid].includes(position)) s.seenPositions[pid].push(position);
+  pushLog(s, `${pid.slice(0, 6)}… peeked own card`);
+  clearAbilityAndAdvance(s);
+  return s;
+}
+
+// 9/10: peek an opponent's card. Revealed only to acting player; needs confirm.
+export function actAbilityPeekOther(
+  s: GameState,
+  pid: string,
+  targetUserId: string,
+  position: number,
+): GameState {
+  if (!s.ability || s.ability.by !== pid) return s;
+  requireAbility(s, pid, "peekOther");
+  if (targetUserId === pid) throw new Error("Pick an opponent");
+  const hand = s.hands[targetUserId];
+  if (!hand || position < 0 || position >= hand.length || hand[position] === null)
+    throw new Error("Bad target");
+  s.ability = {
+    ...s.ability,
+    step: "lookSwapChooseSwap", // reuse "second step" to mean "waiting for confirm"
+    revealed: { userId: targetUserId, position, card: hand[position]! },
+  };
+  pushLog(s, `${pid.slice(0, 6)}… peeked opponent's card`);
+  return s;
+}
+
+// Confirm-and-finish for peekOther (no swap involved).
+export function actAbilityConfirm(s: GameState, pid: string): GameState {
+  if (!s.ability || s.ability.by !== pid) return s;
+  if (s.ability.kind !== "peekOther") throw new Error("Wrong ability");
+  clearAbilityAndAdvance(s);
+  return s;
+}
+
+// J/Q: blind swap any two cards (own/opponent). Two-step pick.
+export function actAbilityBlindSwap(
+  s: GameState,
+  pid: string,
+  targetUserId: string,
+  position: number,
+): GameState {
+  if (!s.ability || s.ability.by !== pid) return s;
+  requireAbility(s, pid, "blindSwap");
+  const hand = s.hands[targetUserId];
+  if (!hand || position < 0 || position >= hand.length || hand[position] === null)
+    throw new Error("Bad pick");
+  if (!s.ability.pickedFirst) {
+    s.ability = { ...s.ability, pickedFirst: { userId: targetUserId, position } };
+    pushLog(s, `${pid.slice(0, 6)}… picked first card to swap`);
+    return s;
+  }
+  const a = s.ability.pickedFirst;
+  if (a.userId === targetUserId && a.position === position)
+    throw new Error("Pick a different second card");
+  const handA = s.hands[a.userId];
+  const handB = hand;
+  const cardA = handA[a.position];
+  const cardB = handB[position];
+  if (cardA === null || cardB === null) throw new Error("Empty slot");
+  handA[a.position] = cardB;
+  handB[position] = cardA;
+  // Swapped cards: previous owners lose knowledge; no one gains it.
+  s.seenPositions[a.userId] = s.seenPositions[a.userId].filter((p) => p !== a.position);
+  s.seenPositions[targetUserId] = s.seenPositions[targetUserId].filter((p) => p !== position);
+  pushLog(s, `${pid.slice(0, 6)}… blind-swapped two cards`);
+  clearAbilityAndAdvance(s);
+  return s;
+}
+
+// Black K step 1: look at any card.
+export function actAbilityLookSwapPeek(
+  s: GameState,
+  pid: string,
+  targetUserId: string,
+  position: number,
+): GameState {
+  if (!s.ability || s.ability.by !== pid) return s;
+  requireAbility(s, pid, "lookSwap");
+  if (s.ability.step !== "pick") return s;
+  const hand = s.hands[targetUserId];
+  if (!hand || position < 0 || position >= hand.length || hand[position] === null)
+    throw new Error("Bad target");
+  s.ability = {
+    ...s.ability,
+    step: "lookSwapChooseSwap",
+    revealed: { userId: targetUserId, position, card: hand[position]! },
+  };
+  pushLog(s, `${pid.slice(0, 6)}… looked at a card`);
+  return s;
+}
+
+// Black K step 2: optionally swap revealed card with one of your own. swapWithPosition=null = pass.
+export function actAbilityLookSwapDecide(
+  s: GameState,
+  pid: string,
+  swapWithPosition: number | null,
+): GameState {
+  if (!s.ability || s.ability.by !== pid) return s;
+  requireAbility(s, pid, "lookSwap");
+  if (s.ability.step !== "lookSwapChooseSwap" || !s.ability.revealed)
+    throw new Error("Nothing revealed");
+  if (swapWithPosition !== null) {
+    const my = s.hands[pid];
+    if (swapWithPosition < 0 || swapWithPosition >= my.length || my[swapWithPosition] === null)
+      throw new Error("Bad own position");
+    const rev = s.ability.revealed;
+    const targetHand = s.hands[rev.userId];
+    const mine = my[swapWithPosition]!;
+    const theirs = targetHand[rev.position]!;
+    my[swapWithPosition] = theirs;
+    targetHand[rev.position] = mine;
+    // The acting player saw `theirs` so they now know that own slot.
+    if (!s.seenPositions[pid].includes(swapWithPosition))
+      s.seenPositions[pid].push(swapWithPosition);
+    // Other player loses knowledge of swapped slot (if it wasn't theirs).
+    if (rev.userId !== pid)
+      s.seenPositions[rev.userId] = s.seenPositions[rev.userId].filter((p) => p !== rev.position);
+    pushLog(s, `${pid.slice(0, 6)}… swapped revealed card`);
+  } else {
+    pushLog(s, `${pid.slice(0, 6)}… passed on swap`);
+  }
+  clearAbilityAndAdvance(s);
+  return s;
+}
+
+// Escape hatch — skip the current ability.
+export function actAbilitySkip(s: GameState, pid: string): GameState {
+  if (!s.ability || s.ability.by !== pid) return s;
+  pushLog(s, `${pid.slice(0, 6)}… skipped ability`);
+  clearAbilityAndAdvance(s);
+  return s;
+}
+
 // Snap: player tries to dump a matching card onto the discard pile.
 // target: { userId, position } — own or opponent.
 // If opponent and successful: snapper must give one of their own cards (giveFromPosition).
