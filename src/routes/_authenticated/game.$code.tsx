@@ -620,11 +620,13 @@ function OpponentArea({
   player,
   isTurn,
   armed,
+  revealedHere,
   onCardClick,
 }: {
   player: GameView["players"][number];
   isTurn: boolean;
   armed: boolean;
+  revealedHere: { position: number; card: number } | null;
   onCardClick: (position: number) => void;
 }) {
   return (
@@ -636,18 +638,143 @@ function OpponentArea({
         <span className="text-xs text-muted-foreground">({player.handSize})</span>
       </div>
       <div className="flex flex-wrap gap-1 justify-center max-w-[200px]">
-        {player.hand.map((c, i) => (
-          <PlayingCard
-            key={i}
-            card={c}
-            size="sm"
-            onClick={armed && c !== null ? () => onCardClick(i) : undefined}
-            highlight={armed && c !== null}
-          />
-        ))}
+        {player.hand.map((c, i) => {
+          const showRevealed = revealedHere?.position === i && revealedHere.card !== -1;
+          return (
+            <PlayingCard
+              key={i}
+              card={showRevealed ? revealedHere!.card : c}
+              size="sm"
+              onClick={armed && c !== null ? () => onCardClick(i) : undefined}
+              highlight={(armed && c !== null) || showRevealed}
+            />
+          );
+        })}
       </div>
     </div>
   );
+}
+
+function MyHand({
+  me,
+  isTurn,
+  canSwap,
+  snapArmed,
+  pendingGive,
+  abilityActive,
+  revealedHere,
+  pickedFirst,
+  onCardClick,
+}: {
+  me: GameView["players"][number];
+  isTurn: boolean;
+  canSwap: boolean;
+  snapArmed: boolean;
+  pendingGive: boolean;
+  abilityActive: boolean;
+  revealedHere: { position: number; card: number } | null;
+  pickedFirst: number | null;
+  onCardClick: (position: number) => void;
+}) {
+  const interactive = canSwap || snapArmed || pendingGive || abilityActive;
+  return (
+    <div
+      className={`bg-felt-dark/40 rounded-lg p-4 flex flex-col items-center gap-2 max-w-md mx-auto w-full ${isTurn ? "turn-glow" : ""}`}
+    >
+      <div className="text-sm font-medium">
+        You <span className="text-xs text-muted-foreground">({me.handSize})</span>
+      </div>
+      <div className="flex flex-wrap gap-2 justify-center">
+        {me.hand.map((c, i) => {
+          const showRevealed = revealedHere?.position === i && revealedHere.card !== -1;
+          const isPicked = pickedFirst === i;
+          return (
+            <PlayingCard
+              key={i}
+              card={showRevealed ? revealedHere!.card : c}
+              size="md"
+              onClick={interactive && c !== null ? () => onCardClick(i) : undefined}
+              highlight={(interactive && c !== null) || showRevealed || isPicked}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AbilityBanner({
+  view,
+  myAbility,
+  othersAbility,
+  onSkip,
+  onConfirm,
+  onLookSwapPass,
+}: {
+  view: GameView;
+  myAbility: GameView["ability"];
+  othersAbility: GameView["ability"];
+  onSkip: () => void;
+  onConfirm: () => void;
+  onLookSwapPass: () => void;
+}) {
+  if (othersAbility) {
+    const who = view.players.find((p) => p.user_id === othersAbility.by)?.username ?? "Player";
+    return (
+      <div className="mb-3 rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-center text-accent">
+        Waiting for {who} to use their {labelFor(othersAbility.kind)}…
+      </div>
+    );
+  }
+  if (!myAbility) return null;
+  const instruction = (() => {
+    if (myAbility.kind === "peekSelf") return "Click one of YOUR cards to peek at it.";
+    if (myAbility.kind === "peekOther") {
+      return myAbility.revealed
+        ? "Memorize the revealed card, then click Done."
+        : "Click an OPPONENT's card to peek at it.";
+    }
+    if (myAbility.kind === "blindSwap") {
+      return myAbility.pickedFirst
+        ? "Click a SECOND card to swap with (any player)."
+        : "Pick the FIRST card to swap (any player).";
+    }
+    if (myAbility.kind === "lookSwap") {
+      if (myAbility.step === "pick") return "Black King: click ANY card to look at it.";
+      return "Swap with one of YOUR cards, or pass.";
+    }
+    return "";
+  })();
+  return (
+    <div className="mb-3 rounded-md border border-primary/50 bg-primary/10 px-3 py-2 text-xs flex flex-wrap items-center gap-2 justify-center">
+      <span className="uppercase tracking-widest font-bold text-primary">
+        {labelFor(myAbility.kind)}
+      </span>
+      <span className="text-foreground">{instruction}</span>
+      {myAbility.kind === "peekOther" && myAbility.revealed && (
+        <Button size="sm" variant="default" onClick={onConfirm}>
+          Done
+        </Button>
+      )}
+      {myAbility.kind === "lookSwap" && myAbility.step === "lookSwapChooseSwap" && (
+        <Button size="sm" variant="secondary" onClick={onLookSwapPass}>
+          Pass
+        </Button>
+      )}
+      <Button size="sm" variant="ghost" onClick={onSkip}>
+        Skip
+      </Button>
+    </div>
+  );
+}
+
+function labelFor(kind: NonNullable<GameView["ability"]>["kind"]): string {
+  switch (kind) {
+    case "peekSelf": return "Peek own (7/8)";
+    case "peekOther": return "Peek other (9/10)";
+    case "blindSwap": return "Blind swap (J/Q)";
+    case "lookSwap": return "Look + swap (Black K)";
+  }
 }
 
 function MyHand({
