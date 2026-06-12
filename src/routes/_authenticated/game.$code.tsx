@@ -11,6 +11,13 @@ import {
   swapDrawn,
   callCambio,
   snapCard,
+  abilityPeekSelf,
+  abilityPeekOther,
+  abilityConfirm,
+  abilityBlindSwap,
+  abilityLookSwapPeek,
+  abilityLookSwapDecide,
+  abilitySkip,
 } from "@/lib/game/game.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
