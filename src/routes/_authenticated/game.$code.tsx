@@ -408,6 +408,20 @@ function BoardView({
         </div>
       </header>
 
+      {/* Ability banner */}
+      {(myAbility || othersAbility) && (
+        <AbilityBanner
+          view={view}
+          myAbility={myAbility}
+          othersAbility={othersAbility}
+          onSkip={() => call(() => aSkip({ data: { code } }))}
+          onConfirm={() => call(() => aConfirm({ data: { code } }))}
+          onLookSwapPass={() =>
+            call(() => aLookDecide({ data: { code, swapWithPosition: null } }))
+          }
+        />
+      )}
+
       {/* Opponents */}
       <div
         className={`grid gap-4 mb-6 ${opponents.length === 1 ? "grid-cols-1" : opponents.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}
@@ -417,8 +431,16 @@ function BoardView({
             key={p.user_id}
             player={p}
             isTurn={view.currentTurnUserId === p.user_id}
-            armed={snapArmed}
-            onCardClick={(pos) => handleSnapTarget(p.user_id, pos)}
+            armed={snapArmed || !!myAbility}
+            revealedHere={
+              myAbility?.revealed && myAbility.revealed.userId === p.user_id
+                ? { position: myAbility.revealed.position, card: myAbility.revealed.card }
+                : null
+            }
+            onCardClick={(pos) => {
+              if (handleAbilityCardClick(p.user_id, pos)) return;
+              handleSnapTarget(p.user_id, pos);
+            }}
           />
         ))}
       </div>
@@ -427,7 +449,7 @@ function BoardView({
       <div className="flex-1 flex flex-col items-center justify-center gap-4">
         <div className="flex items-end gap-6">
           <button
-            disabled={!view.isMyTurn || !!myDraw || view.phase !== "play"}
+            disabled={!view.isMyTurn || !!myDraw || view.phase !== "play" || !!view.ability}
             onClick={() => call(() => draw({ data: { code, from: "deck" } }))}
             className="flex flex-col items-center gap-1 disabled:opacity-50"
           >
@@ -438,7 +460,11 @@ function BoardView({
           </button>
           <button
             disabled={
-              !view.isMyTurn || !!myDraw || view.discardTop === null || view.phase !== "play"
+              !view.isMyTurn ||
+              !!myDraw ||
+              view.discardTop === null ||
+              view.phase !== "play" ||
+              !!view.ability
             }
             onClick={() => call(() => draw({ data: { code, from: "discard" } }))}
             className="flex flex-col items-center gap-1 disabled:opacity-50"
@@ -480,7 +506,7 @@ function BoardView({
               </span>
             </>
           )}
-          {view.isMyTurn && !myDraw && view.phase === "play" && !view.cambioCalledBy && (
+          {view.isMyTurn && !myDraw && !view.ability && view.phase === "play" && !view.cambioCalledBy && (
             <Button
               variant="outline"
               onClick={() => call(() => cambio({ data: { code } }))}
@@ -488,7 +514,7 @@ function BoardView({
               Call Cambio
             </Button>
           )}
-          {!someoneDrawing && view.phase === "play" && view.discardTop !== null && (
+          {!someoneDrawing && !view.ability && view.phase === "play" && view.discardTop !== null && (
             <Button
               variant={snapArmed ? "default" : "outline"}
               onClick={() => {
@@ -517,7 +543,19 @@ function BoardView({
         canSwap={!!myDraw}
         snapArmed={snapArmed}
         pendingGive={pendingSnap !== null}
+        abilityActive={!!myAbility}
+        revealedHere={
+          myAbility?.revealed && myAbility.revealed.userId === view.myUserId
+            ? { position: myAbility.revealed.position, card: myAbility.revealed.card }
+            : null
+        }
+        pickedFirst={
+          myAbility?.pickedFirst && myAbility.pickedFirst.userId === view.myUserId
+            ? myAbility.pickedFirst.position
+            : null
+        }
         onCardClick={(pos) => {
+          if (handleAbilityCardClick(view.myUserId, pos)) return;
           if (pendingSnap) {
             handleGiveCard(pos);
           } else if (snapArmed) {
