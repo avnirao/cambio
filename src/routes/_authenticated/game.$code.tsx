@@ -11,6 +11,13 @@ import {
   swapDrawn,
   callCambio,
   snapCard,
+  abilityPeekSelf,
+  abilityPeekOther,
+  abilityConfirm,
+  abilityBlindSwap,
+  abilityLookSwapPeek,
+  abilityLookSwapDecide,
+  abilitySkip,
 } from "@/lib/game/game.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -199,6 +206,14 @@ function BoardView({
   const cambio = useServerFn(callCambio);
   const snap = useServerFn(snapCard);
 
+  const aPeekSelf = useServerFn(abilityPeekSelf);
+  const aPeekOther = useServerFn(abilityPeekOther);
+  const aConfirm = useServerFn(abilityConfirm);
+  const aBlindSwap = useServerFn(abilityBlindSwap);
+  const aLookPeek = useServerFn(abilityLookSwapPeek);
+  const aLookDecide = useServerFn(abilityLookSwapDecide);
+  const aSkip = useServerFn(abilitySkip);
+
   // Snap UX: when armed, next click on a hand card attempts a snap.
   const [snapArmed, setSnapArmed] = useState(false);
   // For opponent snap: after picking target, need to pick own card to give.
@@ -210,12 +225,54 @@ function BoardView({
   const [setupRevealed, setSetupRevealed] = useState(false);
   const myReady = view.setupReady[view.myUserId];
 
+  const myAbility = view.ability && view.ability.by === view.myUserId ? view.ability : null;
+  const othersAbility = view.ability && view.ability.by !== view.myUserId ? view.ability : null;
+
   async function call<T>(fn: () => Promise<T>) {
     try {
       await fn();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Action failed");
     }
+  }
+
+  function handleAbilityCardClick(userId: string, position: number) {
+    if (!myAbility) return false;
+    const kind = myAbility.kind;
+    if (kind === "peekSelf") {
+      if (userId !== view.myUserId) {
+        toast.error("Pick one of YOUR cards");
+        return true;
+      }
+      call(() => aPeekSelf({ data: { code, position } }));
+      return true;
+    }
+    if (kind === "peekOther") {
+      if (myAbility.revealed) return true; // waiting for confirm
+      if (userId === view.myUserId) {
+        toast.error("Pick an OPPONENT's card");
+        return true;
+      }
+      call(() => aPeekOther({ data: { code, targetUserId: userId, position } }));
+      return true;
+    }
+    if (kind === "blindSwap") {
+      call(() => aBlindSwap({ data: { code, targetUserId: userId, position } }));
+      return true;
+    }
+    if (kind === "lookSwap") {
+      if (myAbility.step === "pick") {
+        call(() => aLookPeek({ data: { code, targetUserId: userId, position } }));
+      } else if (myAbility.step === "lookSwapChooseSwap") {
+        if (userId !== view.myUserId) {
+          toast.error("Pick one of YOUR cards to swap with");
+          return true;
+        }
+        call(() => aLookDecide({ data: { code, swapWithPosition: position } }));
+      }
+      return true;
+    }
+    return false;
   }
 
   function handleSnapTarget(userId: string, position: number) {
@@ -351,6 +408,20 @@ function BoardView({
         </div>
       </header>
 
+      {/* Ability banner */}
+      {(myAbility || othersAbility) && (
+        <AbilityBanner
+          view={view}
+          myAbility={myAbility}
+          othersAbility={othersAbility}
+          onSkip={() => call(() => aSkip({ data: { code } }))}
+          onConfirm={() => call(() => aConfirm({ data: { code } }))}
+          onLookSwapPass={() =>
+            call(() => aLookDecide({ data: { code, swapWithPosition: null } }))
+          }
+        />
+      )}
+
       {/* Opponents */}
       <div
         className={`grid gap-4 mb-6 ${opponents.length === 1 ? "grid-cols-1" : opponents.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}
@@ -360,8 +431,16 @@ function BoardView({
             key={p.user_id}
             player={p}
             isTurn={view.currentTurnUserId === p.user_id}
-            armed={snapArmed}
-            onCardClick={(pos) => handleSnapTarget(p.user_id, pos)}
+            armed={snapArmed || !!myAbility}
+            revealedHere={
+              myAbility?.revealed && myAbility.revealed.userId === p.user_id
+                ? { position: myAbility.revealed.position, card: myAbility.revealed.card }
+                : null
+            }
+            onCardClick={(pos) => {
+              if (handleAbilityCardClick(p.user_id, pos)) return;
+              handleSnapTarget(p.user_id, pos);
+            }}
           />
         ))}
       </div>
@@ -370,7 +449,7 @@ function BoardView({
       <div className="flex-1 flex flex-col items-center justify-center gap-4">
         <div className="flex items-end gap-6">
           <button
-            disabled={!view.isMyTurn || !!myDraw || view.phase !== "play"}
+            disabled={!view.isMyTurn || !!myDraw || view.phase !== "play" || !!view.ability}
             onClick={() => call(() => draw({ data: { code, from: "deck" } }))}
             className="flex flex-col items-center gap-1 disabled:opacity-50"
           >
@@ -381,7 +460,11 @@ function BoardView({
           </button>
           <button
             disabled={
-              !view.isMyTurn || !!myDraw || view.discardTop === null || view.phase !== "play"
+              !view.isMyTurn ||
+              !!myDraw ||
+              view.discardTop === null ||
+              view.phase !== "play" ||
+              !!view.ability
             }
             onClick={() => call(() => draw({ data: { code, from: "discard" } }))}
             className="flex flex-col items-center gap-1 disabled:opacity-50"
@@ -423,7 +506,7 @@ function BoardView({
               </span>
             </>
           )}
-          {view.isMyTurn && !myDraw && view.phase === "play" && !view.cambioCalledBy && (
+          {view.isMyTurn && !myDraw && !view.ability && view.phase === "play" && !view.cambioCalledBy && (
             <Button
               variant="outline"
               onClick={() => call(() => cambio({ data: { code } }))}
@@ -431,7 +514,7 @@ function BoardView({
               Call Cambio
             </Button>
           )}
-          {!someoneDrawing && view.phase === "play" && view.discardTop !== null && (
+          {!someoneDrawing && !view.ability && view.phase === "play" && view.discardTop !== null && (
             <Button
               variant={snapArmed ? "default" : "outline"}
               onClick={() => {
@@ -460,7 +543,19 @@ function BoardView({
         canSwap={!!myDraw}
         snapArmed={snapArmed}
         pendingGive={pendingSnap !== null}
+        abilityActive={!!myAbility}
+        revealedHere={
+          myAbility?.revealed && myAbility.revealed.userId === view.myUserId
+            ? { position: myAbility.revealed.position, card: myAbility.revealed.card }
+            : null
+        }
+        pickedFirst={
+          myAbility?.pickedFirst && myAbility.pickedFirst.userId === view.myUserId
+            ? myAbility.pickedFirst.position
+            : null
+        }
         onCardClick={(pos) => {
+          if (handleAbilityCardClick(view.myUserId, pos)) return;
           if (pendingSnap) {
             handleGiveCard(pos);
           } else if (snapArmed) {
@@ -525,11 +620,13 @@ function OpponentArea({
   player,
   isTurn,
   armed,
+  revealedHere,
   onCardClick,
 }: {
   player: GameView["players"][number];
   isTurn: boolean;
   armed: boolean;
+  revealedHere: { position: number; card: number } | null;
   onCardClick: (position: number) => void;
 }) {
   return (
@@ -541,15 +638,18 @@ function OpponentArea({
         <span className="text-xs text-muted-foreground">({player.handSize})</span>
       </div>
       <div className="flex flex-wrap gap-1 justify-center max-w-[200px]">
-        {player.hand.map((c, i) => (
-          <PlayingCard
-            key={i}
-            card={c}
-            size="sm"
-            onClick={armed && c !== null ? () => onCardClick(i) : undefined}
-            highlight={armed && c !== null}
-          />
-        ))}
+        {player.hand.map((c, i) => {
+          const showRevealed = revealedHere?.position === i && revealedHere.card !== -1;
+          return (
+            <PlayingCard
+              key={i}
+              card={showRevealed ? revealedHere!.card : c}
+              size="sm"
+              onClick={armed && c !== null ? () => onCardClick(i) : undefined}
+              highlight={(armed && c !== null) || showRevealed}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -561,6 +661,9 @@ function MyHand({
   canSwap,
   snapArmed,
   pendingGive,
+  abilityActive,
+  revealedHere,
+  pickedFirst,
   onCardClick,
 }: {
   me: GameView["players"][number];
@@ -568,9 +671,12 @@ function MyHand({
   canSwap: boolean;
   snapArmed: boolean;
   pendingGive: boolean;
+  abilityActive: boolean;
+  revealedHere: { position: number; card: number } | null;
+  pickedFirst: number | null;
   onCardClick: (position: number) => void;
 }) {
-  const interactive = canSwap || snapArmed || pendingGive;
+  const interactive = canSwap || snapArmed || pendingGive || abilityActive;
   return (
     <div
       className={`bg-felt-dark/40 rounded-lg p-4 flex flex-col items-center gap-2 max-w-md mx-auto w-full ${isTurn ? "turn-glow" : ""}`}
@@ -579,16 +685,94 @@ function MyHand({
         You <span className="text-xs text-muted-foreground">({me.handSize})</span>
       </div>
       <div className="flex flex-wrap gap-2 justify-center">
-        {me.hand.map((c, i) => (
-          <PlayingCard
-            key={i}
-            card={c}
-            size="md"
-            onClick={interactive && c !== null ? () => onCardClick(i) : undefined}
-            highlight={interactive && c !== null}
-          />
-        ))}
+        {me.hand.map((c, i) => {
+          const showRevealed = revealedHere?.position === i && revealedHere.card !== -1;
+          const isPicked = pickedFirst === i;
+          return (
+            <PlayingCard
+              key={i}
+              card={showRevealed ? revealedHere!.card : c}
+              size="md"
+              onClick={interactive && c !== null ? () => onCardClick(i) : undefined}
+              highlight={(interactive && c !== null) || showRevealed || isPicked}
+            />
+          );
+        })}
       </div>
     </div>
   );
+}
+
+function AbilityBanner({
+  view,
+  myAbility,
+  othersAbility,
+  onSkip,
+  onConfirm,
+  onLookSwapPass,
+}: {
+  view: GameView;
+  myAbility: GameView["ability"];
+  othersAbility: GameView["ability"];
+  onSkip: () => void;
+  onConfirm: () => void;
+  onLookSwapPass: () => void;
+}) {
+  if (othersAbility) {
+    const who = view.players.find((p) => p.user_id === othersAbility.by)?.username ?? "Player";
+    return (
+      <div className="mb-3 rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-center text-accent">
+        Waiting for {who} to use their {labelFor(othersAbility.kind)}…
+      </div>
+    );
+  }
+  if (!myAbility) return null;
+  const instruction = (() => {
+    if (myAbility.kind === "peekSelf") return "Click one of YOUR cards to peek at it.";
+    if (myAbility.kind === "peekOther") {
+      return myAbility.revealed
+        ? "Memorize the revealed card, then click Done."
+        : "Click an OPPONENT's card to peek at it.";
+    }
+    if (myAbility.kind === "blindSwap") {
+      return myAbility.pickedFirst
+        ? "Click a SECOND card to swap with (any player)."
+        : "Pick the FIRST card to swap (any player).";
+    }
+    if (myAbility.kind === "lookSwap") {
+      if (myAbility.step === "pick") return "Black King: click ANY card to look at it.";
+      return "Swap with one of YOUR cards, or pass.";
+    }
+    return "";
+  })();
+  return (
+    <div className="mb-3 rounded-md border border-primary/50 bg-primary/10 px-3 py-2 text-xs flex flex-wrap items-center gap-2 justify-center">
+      <span className="uppercase tracking-widest font-bold text-primary">
+        {labelFor(myAbility.kind)}
+      </span>
+      <span className="text-foreground">{instruction}</span>
+      {myAbility.kind === "peekOther" && myAbility.revealed && (
+        <Button size="sm" variant="default" onClick={onConfirm}>
+          Done
+        </Button>
+      )}
+      {myAbility.kind === "lookSwap" && myAbility.step === "lookSwapChooseSwap" && (
+        <Button size="sm" variant="secondary" onClick={onLookSwapPass}>
+          Pass
+        </Button>
+      )}
+      <Button size="sm" variant="ghost" onClick={onSkip}>
+        Skip
+      </Button>
+    </div>
+  );
+}
+
+function labelFor(kind: NonNullable<GameView["ability"]>["kind"]): string {
+  switch (kind) {
+    case "peekSelf": return "Peek own (7/8)";
+    case "peekOther": return "Peek other (9/10)";
+    case "blindSwap": return "Blind swap (J/Q)";
+    case "lookSwap": return "Look + swap (Black K)";
+  }
 }

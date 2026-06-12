@@ -1,8 +1,10 @@
 import {
+  type AbilityKind,
   type Card,
   type GameState,
   type GameView,
   type PublicPlayer,
+  isBlack,
   rankOf,
   scoreOf,
 } from "./types";
@@ -53,6 +55,7 @@ export function initialState(seatOrder: string[]): GameState {
     winnerId: null,
     log: [{ t: Date.now(), msg: "Game started — peek your bottom 2 cards" }],
     seenPositions,
+    ability: null,
   };
 }
 
@@ -154,12 +157,37 @@ export function actDiscardDrawn(s: GameState, pid: string): GameState {
   if (s.phase !== "play" || s.seatOrder[s.turn] !== pid || !s.drawn) return s; // idempotent
   if (s.drawn.from === "discard")
     throw new Error("Can't discard a card you took from discard — must swap");
-  s.discard.push(s.drawn.card);
-  pushLog(s, `${pid.slice(0, 6)}… discarded`);
+  const card = s.drawn.card;
+  s.discard.push(card);
   s.drawn = null;
   s.drawnBy = null;
-  advanceTurn(s);
+  pushLog(s, `${pid.slice(0, 6)}… discarded`);
+  const kind = abilityFromCard(card);
+  if (kind) {
+    s.ability = { by: pid, kind, step: "pick" };
+    pushLog(s, `${pid.slice(0, 6)}… ability: ${abilityLabel(kind)}`);
+  } else {
+    advanceTurn(s);
+  }
   return s;
+}
+
+function abilityFromCard(card: Card): AbilityKind | null {
+  const r = rankOf(card);
+  if (r === 6 || r === 7) return "peekSelf"; // 7 or 8
+  if (r === 8 || r === 9) return "peekOther"; // 9 or 10
+  if (r === 10 || r === 11) return "blindSwap"; // J or Q
+  if (r === 12 && isBlack(card)) return "lookSwap"; // Black K
+  return null;
+}
+
+function abilityLabel(kind: AbilityKind): string {
+  switch (kind) {
+    case "peekSelf": return "peek your own card";
+    case "peekOther": return "peek an opponent's card";
+    case "blindSwap": return "blind swap two cards";
+    case "lookSwap": return "look + swap";
+  }
 }
 
 export function actSwap(s: GameState, pid: string, position: number): GameState {
@@ -187,6 +215,162 @@ export function actCallCambio(s: GameState, pid: string): GameState {
   s.cambioStartTurn = s.turnCount;
   pushLog(s, `${pid.slice(0, 6)}… called CAMBIO!`);
   advanceTurn(s);
+  return s;
+}
+
+// ----------------- Card abilities -----------------
+
+function requireAbility(s: GameState, pid: string, kind: AbilityKind | AbilityKind[]) {
+  if (!s.ability) throw new Error("No pending ability");
+  if (s.ability.by !== pid) throw new Error("Not your ability");
+  const kinds = Array.isArray(kind) ? kind : [kind];
+  if (!kinds.includes(s.ability.kind)) throw new Error("Wrong ability");
+}
+
+function clearAbilityAndAdvance(s: GameState) {
+  s.ability = null;
+  advanceTurn(s);
+}
+
+// 7/8: peek one of your own cards. Permanently added to seenPositions.
+export function actAbilityPeekSelf(s: GameState, pid: string, position: number): GameState {
+  if (!s.ability || s.ability.by !== pid) return s; // idempotent
+  requireAbility(s, pid, "peekSelf");
+  const hand = s.hands[pid];
+  if (position < 0 || position >= hand.length || hand[position] === null)
+    throw new Error("Bad position");
+  if (!s.seenPositions[pid].includes(position)) s.seenPositions[pid].push(position);
+  pushLog(s, `${pid.slice(0, 6)}… peeked own card`);
+  clearAbilityAndAdvance(s);
+  return s;
+}
+
+// 9/10: peek an opponent's card. Revealed only to acting player; needs confirm.
+export function actAbilityPeekOther(
+  s: GameState,
+  pid: string,
+  targetUserId: string,
+  position: number,
+): GameState {
+  if (!s.ability || s.ability.by !== pid) return s;
+  requireAbility(s, pid, "peekOther");
+  if (targetUserId === pid) throw new Error("Pick an opponent");
+  const hand = s.hands[targetUserId];
+  if (!hand || position < 0 || position >= hand.length || hand[position] === null)
+    throw new Error("Bad target");
+  s.ability = {
+    ...s.ability,
+    step: "lookSwapChooseSwap", // reuse "second step" to mean "waiting for confirm"
+    revealed: { userId: targetUserId, position, card: hand[position]! },
+  };
+  pushLog(s, `${pid.slice(0, 6)}… peeked opponent's card`);
+  return s;
+}
+
+// Confirm-and-finish for peekOther (no swap involved).
+export function actAbilityConfirm(s: GameState, pid: string): GameState {
+  if (!s.ability || s.ability.by !== pid) return s;
+  if (s.ability.kind !== "peekOther") throw new Error("Wrong ability");
+  clearAbilityAndAdvance(s);
+  return s;
+}
+
+// J/Q: blind swap any two cards (own/opponent). Two-step pick.
+export function actAbilityBlindSwap(
+  s: GameState,
+  pid: string,
+  targetUserId: string,
+  position: number,
+): GameState {
+  if (!s.ability || s.ability.by !== pid) return s;
+  requireAbility(s, pid, "blindSwap");
+  const hand = s.hands[targetUserId];
+  if (!hand || position < 0 || position >= hand.length || hand[position] === null)
+    throw new Error("Bad pick");
+  if (!s.ability.pickedFirst) {
+    s.ability = { ...s.ability, pickedFirst: { userId: targetUserId, position } };
+    pushLog(s, `${pid.slice(0, 6)}… picked first card to swap`);
+    return s;
+  }
+  const a = s.ability.pickedFirst;
+  if (a.userId === targetUserId && a.position === position)
+    throw new Error("Pick a different second card");
+  const handA = s.hands[a.userId];
+  const handB = hand;
+  const cardA = handA[a.position];
+  const cardB = handB[position];
+  if (cardA === null || cardB === null) throw new Error("Empty slot");
+  handA[a.position] = cardB;
+  handB[position] = cardA;
+  // Swapped cards: previous owners lose knowledge; no one gains it.
+  s.seenPositions[a.userId] = s.seenPositions[a.userId].filter((p) => p !== a.position);
+  s.seenPositions[targetUserId] = s.seenPositions[targetUserId].filter((p) => p !== position);
+  pushLog(s, `${pid.slice(0, 6)}… blind-swapped two cards`);
+  clearAbilityAndAdvance(s);
+  return s;
+}
+
+// Black K step 1: look at any card.
+export function actAbilityLookSwapPeek(
+  s: GameState,
+  pid: string,
+  targetUserId: string,
+  position: number,
+): GameState {
+  if (!s.ability || s.ability.by !== pid) return s;
+  requireAbility(s, pid, "lookSwap");
+  if (s.ability.step !== "pick") return s;
+  const hand = s.hands[targetUserId];
+  if (!hand || position < 0 || position >= hand.length || hand[position] === null)
+    throw new Error("Bad target");
+  s.ability = {
+    ...s.ability,
+    step: "lookSwapChooseSwap",
+    revealed: { userId: targetUserId, position, card: hand[position]! },
+  };
+  pushLog(s, `${pid.slice(0, 6)}… looked at a card`);
+  return s;
+}
+
+// Black K step 2: optionally swap revealed card with one of your own. swapWithPosition=null = pass.
+export function actAbilityLookSwapDecide(
+  s: GameState,
+  pid: string,
+  swapWithPosition: number | null,
+): GameState {
+  if (!s.ability || s.ability.by !== pid) return s;
+  requireAbility(s, pid, "lookSwap");
+  if (s.ability.step !== "lookSwapChooseSwap" || !s.ability.revealed)
+    throw new Error("Nothing revealed");
+  if (swapWithPosition !== null) {
+    const my = s.hands[pid];
+    if (swapWithPosition < 0 || swapWithPosition >= my.length || my[swapWithPosition] === null)
+      throw new Error("Bad own position");
+    const rev = s.ability.revealed;
+    const targetHand = s.hands[rev.userId];
+    const mine = my[swapWithPosition]!;
+    const theirs = targetHand[rev.position]!;
+    my[swapWithPosition] = theirs;
+    targetHand[rev.position] = mine;
+    // The acting player saw `theirs` so they now know that own slot.
+    if (!s.seenPositions[pid].includes(swapWithPosition))
+      s.seenPositions[pid].push(swapWithPosition);
+    // Other player loses knowledge of swapped slot (if it wasn't theirs).
+    if (rev.userId !== pid)
+      s.seenPositions[rev.userId] = s.seenPositions[rev.userId].filter((p) => p !== rev.position);
+    pushLog(s, `${pid.slice(0, 6)}… swapped revealed card`);
+  } else {
+    pushLog(s, `${pid.slice(0, 6)}… passed on swap`);
+  }
+  clearAbilityAndAdvance(s);
+  return s;
+}
+
+// Escape hatch — skip the current ability.
+export function actAbilitySkip(s: GameState, pid: string): GameState {
+  if (!s.ability || s.ability.by !== pid) return s;
+  pushLog(s, `${pid.slice(0, 6)}… skipped ability`);
+  clearAbilityAndAdvance(s);
   return s;
 }
 
@@ -314,5 +498,20 @@ export function buildView(
     winnerId: state.winnerId,
     log: state.log.slice(-15),
     setupReady: state.setupReady,
+    ability: state.ability
+      ? {
+          by: state.ability.by,
+          kind: state.ability.kind,
+          step: state.ability.step,
+          revealed: state.ability.revealed
+            ? {
+                userId: state.ability.revealed.userId,
+                position: state.ability.revealed.position,
+                card: state.ability.by === myUserId ? state.ability.revealed.card : -1,
+              }
+            : undefined,
+          pickedFirst: state.ability.pickedFirst,
+        }
+      : null,
   };
 }
