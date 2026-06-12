@@ -122,10 +122,10 @@ export const startGame = createServerFn({ method: "POST" })
       .select("user_id, seat")
       .eq("game_id", game.id)
       .order("seat", { ascending: true });
-    if (!players || players.length < 2) throw new Error("Need at least 2 players");
+    if (!players || players.length < 1) throw new Error("Need at least 1 player");
     const seatOrder = players.map((p) => p.user_id);
     const state = initialState(seatOrder);
-    await supabaseAdmin
+    const { error: updateError } = await supabaseAdmin
       .from("games")
       .update({
         status: "setup",
@@ -134,6 +134,7 @@ export const startGame = createServerFn({ method: "POST" })
         version: game.version + 1,
       })
       .eq("id", game.id);
+    if (updateError) throw new Error(updateError.message);
     return { ok: true };
   });
 
