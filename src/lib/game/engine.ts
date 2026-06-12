@@ -158,12 +158,37 @@ export function actDiscardDrawn(s: GameState, pid: string): GameState {
   if (s.phase !== "play" || s.seatOrder[s.turn] !== pid || !s.drawn) return s; // idempotent
   if (s.drawn.from === "discard")
     throw new Error("Can't discard a card you took from discard — must swap");
-  s.discard.push(s.drawn.card);
-  pushLog(s, `${pid.slice(0, 6)}… discarded`);
+  const card = s.drawn.card;
+  s.discard.push(card);
   s.drawn = null;
   s.drawnBy = null;
-  advanceTurn(s);
+  pushLog(s, `${pid.slice(0, 6)}… discarded`);
+  const kind = abilityFromCard(card);
+  if (kind) {
+    s.ability = { by: pid, kind, step: "pick" };
+    pushLog(s, `${pid.slice(0, 6)}… ability: ${abilityLabel(kind)}`);
+  } else {
+    advanceTurn(s);
+  }
   return s;
+}
+
+function abilityFromCard(card: Card): AbilityKind | null {
+  const r = rankOf(card);
+  if (r === 6 || r === 7) return "peekSelf"; // 7 or 8
+  if (r === 8 || r === 9) return "peekOther"; // 9 or 10
+  if (r === 10 || r === 11) return "blindSwap"; // J or Q
+  if (r === 12 && isBlack(card)) return "lookSwap"; // Black K
+  return null;
+}
+
+function abilityLabel(kind: AbilityKind): string {
+  switch (kind) {
+    case "peekSelf": return "peek your own card";
+    case "peekOther": return "peek an opponent's card";
+    case "blindSwap": return "blind swap two cards";
+    case "lookSwap": return "look + swap";
+  }
 }
 
 export function actSwap(s: GameState, pid: string, position: number): GameState {
