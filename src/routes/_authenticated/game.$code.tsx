@@ -206,6 +206,14 @@ function BoardView({
   const cambio = useServerFn(callCambio);
   const snap = useServerFn(snapCard);
 
+  const aPeekSelf = useServerFn(abilityPeekSelf);
+  const aPeekOther = useServerFn(abilityPeekOther);
+  const aConfirm = useServerFn(abilityConfirm);
+  const aBlindSwap = useServerFn(abilityBlindSwap);
+  const aLookPeek = useServerFn(abilityLookSwapPeek);
+  const aLookDecide = useServerFn(abilityLookSwapDecide);
+  const aSkip = useServerFn(abilitySkip);
+
   // Snap UX: when armed, next click on a hand card attempts a snap.
   const [snapArmed, setSnapArmed] = useState(false);
   // For opponent snap: after picking target, need to pick own card to give.
@@ -217,12 +225,54 @@ function BoardView({
   const [setupRevealed, setSetupRevealed] = useState(false);
   const myReady = view.setupReady[view.myUserId];
 
+  const myAbility = view.ability && view.ability.by === view.myUserId ? view.ability : null;
+  const othersAbility = view.ability && view.ability.by !== view.myUserId ? view.ability : null;
+
   async function call<T>(fn: () => Promise<T>) {
     try {
       await fn();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Action failed");
     }
+  }
+
+  function handleAbilityCardClick(userId: string, position: number) {
+    if (!myAbility) return false;
+    const kind = myAbility.kind;
+    if (kind === "peekSelf") {
+      if (userId !== view.myUserId) {
+        toast.error("Pick one of YOUR cards");
+        return true;
+      }
+      call(() => aPeekSelf({ data: { code, position } }));
+      return true;
+    }
+    if (kind === "peekOther") {
+      if (myAbility.revealed) return true; // waiting for confirm
+      if (userId === view.myUserId) {
+        toast.error("Pick an OPPONENT's card");
+        return true;
+      }
+      call(() => aPeekOther({ data: { code, targetUserId: userId, position } }));
+      return true;
+    }
+    if (kind === "blindSwap") {
+      call(() => aBlindSwap({ data: { code, targetUserId: userId, position } }));
+      return true;
+    }
+    if (kind === "lookSwap") {
+      if (myAbility.step === "pick") {
+        call(() => aLookPeek({ data: { code, targetUserId: userId, position } }));
+      } else if (myAbility.step === "lookSwapChooseSwap") {
+        if (userId !== view.myUserId) {
+          toast.error("Pick one of YOUR cards to swap with");
+          return true;
+        }
+        call(() => aLookDecide({ data: { code, swapWithPosition: position } }));
+      }
+      return true;
+    }
+    return false;
   }
 
   function handleSnapTarget(userId: string, position: number) {
