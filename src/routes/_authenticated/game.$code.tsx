@@ -41,12 +41,14 @@ function GamePage() {
   const join = useServerFn(joinGame);
   const [view, setView] = useState<ViewResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fatal, setFatal] = useState<string | null>(null);
   const triedJoinRef = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
       const v = await fetchView({ data: { code } });
       setView(v);
+      setFatal(null);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load";
       if (message === "Not in game" && !triedJoinRef.current) {
@@ -55,13 +57,14 @@ function GamePage() {
           await join({ data: { code } });
           const v = await fetchView({ data: { code } });
           setView(v);
+          setFatal(null);
           return;
         } catch (joinError) {
-          toast.error(joinError instanceof Error ? joinError.message : "Failed to join");
+          setFatal(joinError instanceof Error ? joinError.message : "Failed to join");
+          return;
         }
-      } else {
-        toast.error(message);
       }
+      setFatal(message);
     } finally {
       setLoading(false);
     }
@@ -88,10 +91,19 @@ function GamePage() {
     };
   }, [code, refresh]);
 
-  if (loading || !view) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-muted-foreground">Loading…</p>
+      </div>
+    );
+  }
+
+  if (fatal || !view) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center">
+        <p className="text-lg">{fatal ?? "Unable to load game"}</p>
+        <Button onClick={() => navigate({ to: "/" })}>Back to home</Button>
       </div>
     );
   }
