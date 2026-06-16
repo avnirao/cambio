@@ -36,11 +36,9 @@ export function initialState(seatOrder: string[]): GameState {
     setupReady[pid] = false;
     seenPositions[pid] = [2, 3];
   }
-  // First card of discard from deck
-  const first = deck.pop()!;
   return {
     deck,
-    discard: [first],
+    discard: [],
     hands,
     seatOrder,
     phase: "setup",
