@@ -99,7 +99,7 @@ function GamePage() {
   if (view.lobby) {
     return <LobbyView view={view} onLeave={() => navigate({ to: "/" })} onStarted={refresh} />;
   }
-  return <BoardView code={code} view={view.view} onLeave={() => navigate({ to: "/" })} />;
+  return <BoardView code={code} view={view.view} onLeave={() => navigate({ to: "/" })} onRefresh={refresh} />;
 }
 
 // =================== Lobby ===================
