@@ -197,10 +197,12 @@ function BoardView({
   code,
   view,
   onLeave,
+  onRefresh,
 }: {
   code: string;
   view: GameView;
   onLeave: () => void;
+  onRefresh: () => Promise<void>;
 }) {
   const ready = useServerFn(setupReady);
   const draw = useServerFn(drawCard);
