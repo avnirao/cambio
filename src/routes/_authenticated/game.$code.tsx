@@ -99,7 +99,7 @@ function GamePage() {
   if (view.lobby) {
     return <LobbyView view={view} onLeave={() => navigate({ to: "/" })} onStarted={refresh} />;
   }
-  return <BoardView code={code} view={view.view} onLeave={() => navigate({ to: "/" })} />;
+  return <BoardView code={code} view={view.view} onLeave={() => navigate({ to: "/" })} onRefresh={refresh} />;
 }
 
 // =================== Lobby ===================
@@ -197,10 +197,12 @@ function BoardView({
   code,
   view,
   onLeave,
+  onRefresh,
 }: {
   code: string;
   view: GameView;
   onLeave: () => void;
+  onRefresh: () => Promise<void>;
 }) {
   const ready = useServerFn(setupReady);
   const draw = useServerFn(drawCard);
@@ -362,10 +364,10 @@ function BoardView({
         <div className="flex flex-col items-center gap-2">
           {!myReady ? (
             <Button
-              disabled={!setupRevealed}
               onClick={() =>
                 call(async () => {
                   await ready({ data: { code } });
+                  await onRefresh();
                 })
               }
             >
