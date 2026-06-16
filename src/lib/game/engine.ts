@@ -382,7 +382,7 @@ export function actSnap(
   giveFromPosition: number | null,
 ): GameState {
   if (s.phase !== "play") throw new Error("Not in play");
-  if (s.discard.length === 0) throw new Error("No discard top");
+  if (s.discard.length === 0) return s; // nothing to snap onto yet
   const top = s.discard[s.discard.length - 1];
   const topRank = rankOf(top);
   const targetHand = s.hands[target.userId];
