@@ -207,8 +207,8 @@ export function actSwap(s: GameState, pid: string, position: number): GameState 
 
 export function actCallCambio(s: GameState, pid: string): GameState {
   if (s.phase !== "play" || s.seatOrder[s.turn] !== pid) return s; // idempotent
-  if (s.drawn) throw new Error("Finish your draw first");
-  if (s.cambioCalledBy) throw new Error("Cambio already called");
+  if (s.drawn) return s; // idempotent — finish your draw first
+  if (s.cambioCalledBy) return s; // idempotent
   s.cambioCalledBy = pid;
   s.cambioStartTurn = s.turnCount;
   pushLog(s, `${pid.slice(0, 6)}… called CAMBIO!`);
