@@ -364,10 +364,10 @@ function BoardView({
         <div className="flex flex-col items-center gap-2">
           {!myReady ? (
             <Button
-              disabled={!setupRevealed}
               onClick={() =>
                 call(async () => {
                   await ready({ data: { code } });
+                  await onRefresh();
                 })
               }
             >
