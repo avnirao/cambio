@@ -41,6 +41,10 @@ function Lobby() {
     setBusy(true);
     try {
       const r = await join({ data: { code: code.trim().toUpperCase() } });
+      if (!r.ok) {
+        toast.error(r.message);
+        return;
+      }
       navigate({ to: "/game/$code", params: { code: r.code } });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
