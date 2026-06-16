@@ -71,7 +71,9 @@ export const joinGame = createServerFn({ method: "POST" })
       .select("*")
       .eq("code", code)
       .maybeSingle();
-    if (!game) throw new Error("Game not found");
+    if (!game) {
+      return { ok: false as const, code, reason: "not_found", message: "Game not found" };
+    }
     if (game.status !== "lobby") {
       // Allow rejoin if already a player
       const { data: existing } = await supabaseAdmin
@@ -80,8 +82,15 @@ export const joinGame = createServerFn({ method: "POST" })
         .eq("game_id", game.id)
         .eq("user_id", context.userId)
         .maybeSingle();
-      if (!existing) throw new Error("Game already started");
-      return { code };
+      if (!existing) {
+        return {
+          ok: false as const,
+          code,
+          reason: "already_started",
+          message: "Game already started",
+        };
+      }
+      return { ok: true as const, code };
     }
     const { data: players } = await supabaseAdmin
       .from("game_players")
@@ -89,8 +98,10 @@ export const joinGame = createServerFn({ method: "POST" })
       .eq("game_id", game.id)
       .order("seat", { ascending: true });
     const alreadyIn = players?.find((p) => p.user_id === context.userId);
-    if (alreadyIn) return { code };
-    if ((players?.length || 0) >= 4) throw new Error("Game is full");
+    if (alreadyIn) return { ok: true as const, code };
+    if ((players?.length || 0) >= 4) {
+      return { ok: false as const, code, reason: "full", message: "Game is full" };
+    }
     const usedSeats = new Set((players || []).map((p) => p.seat));
     let seat = 0;
     while (usedSeats.has(seat)) seat++;
@@ -100,7 +111,7 @@ export const joinGame = createServerFn({ method: "POST" })
       username,
       seat,
     });
-    return { code };
+    return { ok: true as const, code };
   });
 
 // ============= Start (host) =============
@@ -144,7 +155,38 @@ export const getGameView = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ code: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { game, players } = await loadGameForAction(data.code, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const code = data.code.toUpperCase();
+    const { data: game } = await supabaseAdmin
+      .from("games")
+      .select("*")
+      .eq("code", code)
+      .maybeSingle();
+    if (!game) {
+      return {
+        unavailable: true as const,
+        code,
+        reason: "not_found",
+        message: "Game not found",
+        canJoin: false,
+      };
+    }
+    const { data: players } = await supabaseAdmin
+      .from("game_players")
+      .select("user_id, username, seat")
+      .eq("game_id", game.id);
+    const safePlayers = players || [];
+    const isPlayer = safePlayers.some((p) => p.user_id === context.userId);
+    if (!isPlayer) {
+      const canJoin = game.status === "lobby";
+      return {
+        unavailable: true as const,
+        code: game.code,
+        reason: canJoin ? "not_in_game" : "already_started",
+        message: canJoin ? "Join this room to play." : "Game already started",
+        canJoin,
+      };
+    }
     if (game.status === "lobby") {
       return {
         lobby: true as const,
@@ -153,7 +195,7 @@ export const getGameView = createServerFn({ method: "POST" })
         host_id: game.host_id,
         version: game.version,
         myUserId: context.userId,
-        players: players.map((p) => ({ user_id: p.user_id, username: p.username, seat: p.seat })),
+        players: safePlayers.map((p) => ({ user_id: p.user_id, username: p.username, seat: p.seat })),
       };
     }
     const state = game.state as unknown as GameState;
@@ -163,7 +205,7 @@ export const getGameView = createServerFn({ method: "POST" })
         state,
         { id: game.id, code: game.code, status: game.status, version: game.version },
         context.userId,
-        players,
+        safePlayers,
       ),
     };
   });
