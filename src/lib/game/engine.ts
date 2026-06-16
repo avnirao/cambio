@@ -36,11 +36,9 @@ export function initialState(seatOrder: string[]): GameState {
     setupReady[pid] = false;
     seenPositions[pid] = [2, 3];
   }
-  // First card of discard from deck
-  const first = deck.pop()!;
   return {
     deck,
-    discard: [first],
+    discard: [],
     hands,
     seatOrder,
     phase: "setup",
@@ -120,8 +118,8 @@ export function actSetupReady(s: GameState, pid: string): GameState {
   if (!(pid in s.hands)) throw new Error("Not a player");
   if (s.phase !== "setup") return s; // idempotent — already started
   s.setupReady[pid] = true;
-  // Mark bottom 2 positions as "seen" by this player
-  s.seenPositions[pid] = [2, 3];
+  // Peek is over — player no longer "sees" the bottom 2 cards.
+  s.seenPositions[pid] = [];
   pushLog(s, `${pid.slice(0, 6)}… is ready`);
   if (Object.values(s.setupReady).every(Boolean)) {
     s.phase = "play";
